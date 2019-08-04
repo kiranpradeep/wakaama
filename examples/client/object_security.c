@@ -2,11 +2,11 @@
  *
  * Copyright (c) 2013, 2014 Intel Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License v2.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
  *
  * The Eclipse Public License is available at
- *    http://www.eclipse.org/legal/epl-v10.html
+ *    http://www.eclipse.org/legal/epl-v20.html
  * The Eclipse Distribution License is available at
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
@@ -14,6 +14,7 @@
  *    David Navarro, Intel Corporation - initial API and implementation
  *    Bosch Software Innovations GmbH - Please refer to git log
  *    Pascal Rieux - Please refer to git log
+ *    Ville Skyttä - Please refer to git log
  *    
  *******************************************************************************/
 
@@ -27,12 +28,13 @@
  *  Public Key or ID        |  3 |            |  Single   |    Yes    | Opaque  |         |       |
  *  Server Public Key or ID |  4 |            |  Single   |    Yes    | Opaque  |         |       |
  *  Secret Key              |  5 |            |  Single   |    Yes    | Opaque  |         |       |
- *  SMS Security Mode       |  6 |            |  Single   |    Yes    | Integer |  0-255  |       |
- *  SMS Binding Key Param.  |  7 |            |  Single   |    Yes    | Opaque  |   6 B   |       |
- *  SMS Binding Secret Keys |  8 |            |  Single   |    Yes    | Opaque  | 32-48 B |       |
- *  Server SMS Number       |  9 |            |  Single   |    Yes    | Integer |         |       |
+ *  SMS Security Mode       |  6 |            |  Single   |    No     | Integer |  0-255  |       |
+ *  SMS Binding Key Param.  |  7 |            |  Single   |    No     | Opaque  |   6 B   |       |
+ *  SMS Binding Secret Keys |  8 |            |  Single   |    No     | Opaque  | 32-48 B |       |
+ *  Server SMS Number       |  9 |            |  Single   |    No     | String  |         |       |
  *  Short Server ID         | 10 |            |  Single   |    No     | Integer | 1-65535 |       |
- *  Client Hold Off Time    | 11 |            |  Single   |    Yes    | Integer |         |   s   |
+ *  Client Hold Off Time    | 11 |            |  Single   |    No     | Integer |         |   s   |
+ *  BS Account Timeout      | 12 |            |  Single   |    No     | Integer |         |   s   |
  *
  */
 
@@ -45,19 +47,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
-#define LWM2M_SECURITY_URI_ID                 0
-#define LWM2M_SECURITY_BOOTSTRAP_ID           1
-#define LWM2M_SECURITY_MODE_ID            2
-#define LWM2M_SECURITY_PUBLIC_KEY_ID          3
-#define LWM2M_SECURITY_SERVER_PUBLIC_KEY_ID   4
-#define LWM2M_SECURITY_SECRET_KEY_ID          5
-#define LWM2M_SECURITY_SMS_SECURITY_ID        6
-#define LWM2M_SECURITY_SMS_KEY_PARAM_ID       7
-#define LWM2M_SECURITY_SMS_SECRET_KEY_ID      8
-#define LWM2M_SECURITY_SMS_SERVER_NUMBER_ID   9
-#define LWM2M_SECURITY_SHORT_SERVER_ID        10
-#define LWM2M_SECURITY_HOLD_OFF_ID            11
 
 typedef struct _security_instance_
 {
@@ -79,6 +68,7 @@ typedef struct _security_instance_
     uint16_t                     smsSecretLen;
     uint16_t                     shortID;
     uint32_t                     clientHoldOffTime;
+    uint32_t                     bootstrapServerAccountTimeout;
 } security_instance_t;
 
 static uint8_t prv_get_value(lwm2m_data_t * dataP,
@@ -99,15 +89,15 @@ static uint8_t prv_get_value(lwm2m_data_t * dataP,
         return COAP_205_CONTENT;
 
     case LWM2M_SECURITY_PUBLIC_KEY_ID:
-        lwm2m_data_encode_opaque(targetP->publicIdentity, targetP->publicIdLen, dataP);
+        lwm2m_data_encode_opaque((uint8_t*)targetP->publicIdentity, targetP->publicIdLen, dataP);
         return COAP_205_CONTENT;
 
     case LWM2M_SECURITY_SERVER_PUBLIC_KEY_ID:
-        lwm2m_data_encode_opaque(targetP->serverPublicKey, targetP->serverPublicKeyLen, dataP);
+        lwm2m_data_encode_opaque((uint8_t*)targetP->serverPublicKey, targetP->serverPublicKeyLen, dataP);
         return COAP_205_CONTENT;
 
     case LWM2M_SECURITY_SECRET_KEY_ID:
-        lwm2m_data_encode_opaque(targetP->secretKey, targetP->secretKeyLen, dataP);
+        lwm2m_data_encode_opaque((uint8_t*)targetP->secretKey, targetP->secretKeyLen, dataP);
         return COAP_205_CONTENT;
 
     case LWM2M_SECURITY_SMS_SECURITY_ID:
@@ -115,11 +105,11 @@ static uint8_t prv_get_value(lwm2m_data_t * dataP,
         return COAP_205_CONTENT;
 
     case LWM2M_SECURITY_SMS_KEY_PARAM_ID:
-        lwm2m_data_encode_opaque(targetP->smsParams, targetP->smsParamsLen, dataP);
+        lwm2m_data_encode_opaque((uint8_t*)targetP->smsParams, targetP->smsParamsLen, dataP);
         return COAP_205_CONTENT;
 
     case LWM2M_SECURITY_SMS_SECRET_KEY_ID:
-        lwm2m_data_encode_opaque(targetP->smsSecret, targetP->smsSecretLen, dataP);
+        lwm2m_data_encode_opaque((uint8_t*)targetP->smsSecret, targetP->smsSecretLen, dataP);
         return COAP_205_CONTENT;
 
     case LWM2M_SECURITY_SMS_SERVER_NUMBER_ID:
@@ -132,6 +122,10 @@ static uint8_t prv_get_value(lwm2m_data_t * dataP,
 
     case LWM2M_SECURITY_HOLD_OFF_ID:
         lwm2m_data_encode_int(targetP->clientHoldOffTime, dataP);
+        return COAP_205_CONTENT;
+
+    case LWM2M_SECURITY_BOOTSTRAP_TIMEOUT_ID:
+        lwm2m_data_encode_int(targetP->bootstrapServerAccountTimeout, dataP);
         return COAP_205_CONTENT;
 
     default:
@@ -165,7 +159,8 @@ static uint8_t prv_security_read(uint16_t instanceId,
                               LWM2M_SECURITY_SMS_SECRET_KEY_ID,
                               LWM2M_SECURITY_SMS_SERVER_NUMBER_ID,
                               LWM2M_SECURITY_SHORT_SERVER_ID,
-                              LWM2M_SECURITY_HOLD_OFF_ID};
+                              LWM2M_SECURITY_HOLD_OFF_ID,
+                              LWM2M_SECURITY_BOOTSTRAP_TIMEOUT_ID};
         int nbRes = sizeof(resList)/sizeof(uint16_t);
 
         *dataArrayP = lwm2m_data_new(nbRes);
@@ -353,7 +348,7 @@ static uint8_t prv_security_write(uint16_t instanceId,
 
             if (1 == lwm2m_data_decode_int(dataArray + i, &value))
             {
-                if (value >= 0 && value <= 0xFFFF)
+                if (value >= 0 && value <= UINT32_MAX)
                 {
                     targetP->clientHoldOffTime = value;
                     result = COAP_204_CHANGED;
@@ -369,8 +364,32 @@ static uint8_t prv_security_write(uint16_t instanceId,
             }
             break;
         }
+
+        case LWM2M_SECURITY_BOOTSTRAP_TIMEOUT_ID:
+        {
+            int64_t value;
+
+            if (1 == lwm2m_data_decode_int(dataArray + i, &value))
+            {
+                if (value >= 0 && value <= UINT32_MAX)
+                {
+                    targetP->bootstrapServerAccountTimeout = value;
+                    result = COAP_204_CHANGED;
+                }
+                else
+                {
+                    result = COAP_406_NOT_ACCEPTABLE;
+                }
+            }
+            else
+            {
+                result = COAP_400_BAD_REQUEST;
+            }
+            break;
+        }
+
         default:
-            return COAP_404_NOT_FOUND;
+            return COAP_400_BAD_REQUEST;
         }
         i++;
     } while (i < numData && result == COAP_204_CHANGED);
@@ -442,6 +461,11 @@ void copy_security_object(lwm2m_object_t * objectDest, lwm2m_object_t * objectSr
         memcpy(instanceDest, instanceSrc, sizeof(security_instance_t));
         instanceDest->uri = (char*)lwm2m_malloc(strlen(instanceSrc->uri) + 1);
         strcpy(instanceDest->uri, instanceSrc->uri);
+        if (instanceSrc->securityMode == LWM2M_SECURITY_MODE_PRE_SHARED_KEY)
+        {
+            instanceDest->publicIdentity = lwm2m_strdup(instanceSrc->publicIdentity);
+            instanceDest->secretKey = lwm2m_strdup(instanceSrc->secretKey);
+        }
         instanceSrc = (security_instance_t *)instanceSrc->next;
         if (previousInstanceDest == NULL)
         {

@@ -2,11 +2,11 @@
  *
  * Copyright (c) 2015 Bosch Software Innovations GmbH Germany.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License v2.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
  *
  * The Eclipse Public License is available at
- *    http://www.eclipse.org/legal/epl-v10.html
+ *    http://www.eclipse.org/legal/epl-v20.html
  * The Eclipse Distribution License is available at
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
@@ -20,14 +20,14 @@
  * 
  *  Resources:
  *
- *          Name         | ID | Oper. | Inst. | Mand.|  Type   | Range | Units | Descripton |
- *  SMS Tx Counter       |  0 |   R   | Single|  No  | Integer |       |       |            |
- *  SMS Rx Counter       |  1 |   R   | Single|  No  | Integer |       |       |            |
- *  Tx Data              |  2 |   R   | Single|  No  | Integer |       | kByte |            |
- *  Rx Data              |  3 |   R   | Single|  No  | Integer |       | kByte |            |
- *  Max Message Size     |  4 |   R   | Single|  No  | Integer |       | Byte  |            |
- *  Average Message Size |  5 |   R   | Single|  No  | Integer |       | Byte  |            |
- *  StartOrReset         |  6 |   E   | Single|  Yes | Integer |       |       |            |
+ *          Name         | ID | Oper. | Inst. | Mand.|  Type   | Range | Units | Description |
+ *  SMS Tx Counter       |  0 |   R   | Single|  No  | Integer |       |       |             |
+ *  SMS Rx Counter       |  1 |   R   | Single|  No  | Integer |       |       |             |
+ *  Tx Data              |  2 |   R   | Single|  No  | Integer |       | kByte |             |
+ *  Rx Data              |  3 |   R   | Single|  No  | Integer |       | kByte |             |
+ *  Max Message Size     |  4 |   R   | Single|  No  | Integer |       | Byte  |             |
+ *  Average Message Size |  5 |   R   | Single|  No  | Integer |       | Byte  |             |
+ *  StartOrReset         |  6 |   E   | Single|  Yes | Integer |       |       |             |
  */
 
 #include "liblwm2m.h"

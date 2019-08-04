@@ -2,16 +2,17 @@
  *
  * Copyright (c) 2015 Bosch Software Innovations GmbH, Germany.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License v2.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
  *
  * The Eclipse Public License is available at
- *    http://www.eclipse.org/legal/epl-v10.html
+ *    http://www.eclipse.org/legal/epl-v20.html
  * The Eclipse Distribution License is available at
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * Contributors:
  *    Bosch Software Innovations GmbH - Please refer to git log
+ *    Scott Bertin, AMETEK, Inc. - Please refer to git log
  *
  *******************************************************************************/
 
@@ -81,38 +82,6 @@ static void test_decodeTLV()
     CU_ASSERT_EQUAL(id, 33);
     CU_ASSERT_EQUAL(index, 4);
     CU_ASSERT_EQUAL(length, 0x190);
-
-    MEMORY_TRACE_AFTER_EQ;
-}
-
-static void test_opaqueToInt()
-{
-    MEMORY_TRACE_BEFORE;
-    // Data represented in big endian, two'2 complement
-    uint8_t data1[] = {1 };
-    uint8_t data2[] = {1, 2 };
-    uint8_t data3[] = {0xfe, 0xfd, 0xfc, 0xfc};
-    uint8_t data4[] = {0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf8};
-    // Result in platform endianess
-    int64_t value = 0;
-    int length;
-
-
-    length = utils_opaqueToInt(data1, sizeof(data1), &value);
-    CU_ASSERT_EQUAL(length, 1);
-    CU_ASSERT_EQUAL(value, 1);
-
-    length = utils_opaqueToInt(data2, sizeof(data2), &value);
-    CU_ASSERT_EQUAL(length, 2);
-    CU_ASSERT_EQUAL(value, 0x102);
-
-    length = utils_opaqueToInt(data3, sizeof(data3), &value);
-    CU_ASSERT_EQUAL(length, 4);
-    CU_ASSERT_EQUAL(value, -0x1020304);
-
-    length = utils_opaqueToInt(data4, sizeof(data4), &value);
-    CU_ASSERT_EQUAL(length, 8);
-    CU_ASSERT_EQUAL(value, -0x102030405060708);
 
     MEMORY_TRACE_AFTER_EQ;
 }
@@ -277,6 +246,19 @@ static void test_tlv_int(void)
    CU_ASSERT_EQUAL(result, 1);
    CU_ASSERT_EQUAL(value, 0x12);
 
+   lwm2m_data_encode_uint(0x13, dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_UNSIGNED_INTEGER);
+   CU_ASSERT_EQUAL(dataP->value.asUnsigned, 0x13);
+   result = lwm2m_data_decode_int(dataP, &value);
+   CU_ASSERT_EQUAL(result, 1);
+   CU_ASSERT_EQUAL(value, 0x13);
+
+   lwm2m_data_encode_uint(0x8f34567891223344, dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_UNSIGNED_INTEGER);
+   CU_ASSERT_EQUAL(dataP->value.asUnsigned, 0x8f34567891223344);
+   result = lwm2m_data_decode_int(dataP, &value);
+   CU_ASSERT_EQUAL(result, 0);
+
    lwm2m_data_encode_string("18", dataP);
    CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_STRING);
    CU_ASSERT_EQUAL(dataP->value.asBuffer.length, 2);
@@ -313,6 +295,87 @@ static void test_tlv_int(void)
    result = lwm2m_data_decode_int(dataP, &value);
    CU_ASSERT_EQUAL(result, 1);
    CU_ASSERT_EQUAL(value, 0x7f34567891223344);
+
+   lwm2m_data_free(1, dataP);
+   MEMORY_TRACE_AFTER_EQ;
+}
+
+static void test_tlv_uint(void)
+{
+   MEMORY_TRACE_BEFORE;
+   uint64_t value;
+   int result;
+   lwm2m_data_t *dataP =  lwm2m_data_new(1);
+   CU_ASSERT_PTR_NOT_NULL(dataP);
+
+   result = lwm2m_data_decode_uint(dataP, &value);
+   CU_ASSERT_EQUAL(result, 0);
+
+   lwm2m_data_encode_uint(0x12, dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_UNSIGNED_INTEGER);
+   CU_ASSERT_EQUAL(dataP->value.asUnsigned, 0x12);
+   result = lwm2m_data_decode_uint(dataP, &value);
+   CU_ASSERT_EQUAL(result, 1);
+   CU_ASSERT_EQUAL(value, 0x12);
+
+   lwm2m_data_encode_int(0x13, dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_INTEGER);
+   CU_ASSERT_EQUAL(dataP->value.asInteger, 0x13);
+   result = lwm2m_data_decode_uint(dataP, &value);
+   CU_ASSERT_EQUAL(result, 1);
+   CU_ASSERT_EQUAL(value, 0x13);
+
+   lwm2m_data_encode_int(-0x13, dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_INTEGER);
+   CU_ASSERT_EQUAL(dataP->value.asInteger, -0x13);
+   result = lwm2m_data_decode_uint(dataP, &value);
+   CU_ASSERT_EQUAL(result, 0);
+
+   lwm2m_data_encode_string("18", dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_STRING);
+   CU_ASSERT_EQUAL(dataP->value.asBuffer.length, 2);
+   CU_ASSERT(0 == memcmp(dataP->value.asBuffer.buffer, "18", 2));
+   result = lwm2m_data_decode_uint(dataP, &value);
+   CU_ASSERT_EQUAL(result, 1);
+   CU_ASSERT_EQUAL(value, 18);
+
+   lwm2m_data_encode_string("-14678", dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_STRING);
+   CU_ASSERT_EQUAL(dataP->value.asBuffer.length, 6);
+   CU_ASSERT(0 == memcmp(dataP->value.asBuffer.buffer, "-14678", 6));
+   result = lwm2m_data_decode_uint(dataP, &value);
+   CU_ASSERT_EQUAL(result, 0);
+
+   uint8_t data1[] = { 0xed, 0xcc };
+   lwm2m_data_encode_opaque(data1, sizeof(data1), dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_OPAQUE);
+   CU_ASSERT_EQUAL(dataP->value.asBuffer.length, sizeof(data1));
+   CU_ASSERT_PTR_NOT_NULL_FATAL(dataP->value.asBuffer.buffer);
+   CU_ASSERT(0 == memcmp(dataP->value.asBuffer.buffer, data1, sizeof(data1)));
+   result = lwm2m_data_decode_uint(dataP, &value);
+   CU_ASSERT_EQUAL(result, 1);
+   CU_ASSERT_EQUAL(value, 0xedcc);
+   lwm2m_free(dataP->value.asBuffer.buffer);
+
+   uint8_t data2[] = { 0x7f, 0x34, 0x56, 0x78, 0x91, 0x22, 0x33, 0x44 };
+   lwm2m_data_encode_opaque(data2, sizeof(data2), dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_OPAQUE);
+   CU_ASSERT_EQUAL(dataP->value.asBuffer.length, sizeof(data2));
+   CU_ASSERT_PTR_NOT_NULL_FATAL(dataP->value.asBuffer.buffer);
+   CU_ASSERT(0 == memcmp(dataP->value.asBuffer.buffer, data2, sizeof(data2)));
+   result = lwm2m_data_decode_uint(dataP, &value);
+   CU_ASSERT_EQUAL(result, 1);
+   CU_ASSERT_EQUAL(value, 0x7f34567891223344);
+
+   uint8_t data3[] = { 0x8f, 0x34, 0x56, 0x78, 0x91, 0x22, 0x33, 0x44 };
+   lwm2m_data_encode_opaque(data3, sizeof(data3), dataP);
+   CU_ASSERT_EQUAL(dataP->type, LWM2M_TYPE_OPAQUE);
+   CU_ASSERT_EQUAL(dataP->value.asBuffer.length, sizeof(data3));
+   CU_ASSERT_PTR_NOT_NULL_FATAL(dataP->value.asBuffer.buffer);
+   CU_ASSERT(0 == memcmp(dataP->value.asBuffer.buffer, data3, sizeof(data3)));
+   result = lwm2m_data_decode_uint(dataP, &value);
+   CU_ASSERT_EQUAL(result, 1);
+   CU_ASSERT_EQUAL(value, 0x8f34567891223344);
 
    lwm2m_data_free(1, dataP);
    MEMORY_TRACE_AFTER_EQ;
@@ -426,10 +489,10 @@ static struct TestTable table[] = {
         { "test of lwm2m_data_new()", test_tlv_new },
         { "test of lwm2m_data_free()", test_tlv_free },
         { "test of lwm2m_decodeTLV()", test_decodeTLV },
-        { "test of lwm2m_opaqueToInt()", test_opaqueToInt },
         { "test of lwm2m_data_parse()", test_tlv_parse },
         { "test of lwm2m_data_serialize()", test_tlv_serialize },
         { "test of lwm2m_data_encode_int() and lwm2m_data_decode_int()", test_tlv_int },
+        { "test of lwm2m_data_encode_uint() and lwm2m_data_decode_uint()", test_tlv_uint },
         { "test of lwm2m_data_encode_bool()and lwm2m_data_decode_bool()", test_tlv_bool },
         { "test of lwm2m_data_encode_float() and lwm2m_data_decode_float()", test_tlv_float },
         { NULL, NULL },

@@ -2,11 +2,11 @@
  *
  * Copyright (c) 2015 Intel Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License v2.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
  *
  * The Eclipse Public License is available at
- *    http://www.eclipse.org/legal/epl-v10.html
+ *    http://www.eclipse.org/legal/epl-v20.html
  * The Eclipse Distribution License is available at
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
@@ -41,7 +41,7 @@ char * security_get_uri(lwm2m_object_t * obj, int instanceId, char * uriBuffer, 
     {
         if (bufferSize > dataP->value.asBuffer.length){
             memset(uriBuffer,0,dataP->value.asBuffer.length+1);
-            strncpy(uriBuffer,dataP->value.asBuffer.buffer,dataP->value.asBuffer.length);
+            strncpy(uriBuffer,(const char *)dataP->value.asBuffer.buffer,dataP->value.asBuffer.length);
             lwm2m_data_free(size, dataP);
             return uriBuffer;
         }
@@ -75,11 +75,20 @@ char * security_get_public_id(lwm2m_object_t * obj, int instanceId, int * length
 
     obj->readFunc(instanceId, &size, &dataP, obj);
     if (dataP != NULL &&
-            dataP->type == LWM2M_TYPE_OPAQUE)
+        dataP->type == LWM2M_TYPE_OPAQUE)
     {
+        char * buff;
+
+        buff = (char*)lwm2m_malloc(dataP->value.asBuffer.length);
+        if (buff != 0)
+        {
+            memcpy(buff, dataP->value.asBuffer.buffer, dataP->value.asBuffer.length);
             *length = dataP->value.asBuffer.length;
-            return dataP->value.asBuffer.buffer;
-    }else{
+        }
+        lwm2m_data_free(size, dataP);
+
+        return buff;
+    } else {
         return NULL;
     }
 }
@@ -92,17 +101,27 @@ char * security_get_secret_key(lwm2m_object_t * obj, int instanceId, int * lengt
 
     obj->readFunc(instanceId, &size, &dataP, obj);
     if (dataP != NULL &&
-            dataP->type == LWM2M_TYPE_OPAQUE)
+        dataP->type == LWM2M_TYPE_OPAQUE)
     {
-        *length = dataP->value.asBuffer.length;
-        return dataP->value.asBuffer.buffer;
-    }else{
+        char * buff;
+
+        buff = (char*)lwm2m_malloc(dataP->value.asBuffer.length);
+        if (buff != 0)
+        {
+            memcpy(buff, dataP->value.asBuffer.buffer, dataP->value.asBuffer.length);
+            *length = dataP->value.asBuffer.length;
+        }
+        lwm2m_data_free(size, dataP);
+
+        return buff;
+    } else {
         return NULL;
     }
 }
 
 /********************* Security Obj Helpers Ends **********************/
 
+/* Returns the number sent, or -1 for errors */
 int send_data(dtls_connection_t *connP,
                     uint8_t * buffer,
                     size_t length)
@@ -121,7 +140,7 @@ int send_data(dtls_connection_t *connP,
         struct sockaddr_in *saddr = (struct sockaddr_in *)&connP->addr;
         inet_ntop(saddr->sin_family, &saddr->sin_addr, s, INET6_ADDRSTRLEN);
         port = saddr->sin_port;
-}
+    }
     else if (AF_INET6 == connP->addr.sin6_family)
     {
         struct sockaddr_in6 *saddr = (struct sockaddr_in6 *)&connP->addr;
@@ -129,7 +148,7 @@ int send_data(dtls_connection_t *connP,
         port = saddr->sin6_port;
     }
 
-    fprintf(stderr, "Sending %d bytes to [%s]:%hu\r\n", length, s, ntohs(port));
+    fprintf(stderr, "Sending %d bytes to [%s]:%hu\r\n", (int)length, s, ntohs(port));
 
     output_buffer(stderr, buffer, length, 0);
 #endif
@@ -141,7 +160,8 @@ int send_data(dtls_connection_t *connP,
         if (nbSent == -1) return -1;
         offset += nbSent;
     }
-    return 0;
+    connP->lastSend = lwm2m_gettime();
+    return offset;
 }
 
 /**************************  TinyDTLS Callbacks  ************************/
@@ -149,8 +169,7 @@ int send_data(dtls_connection_t *connP,
 /* This function is the "key store" for tinyDTLS. It is called to
  * retrieve a key for the given identity within this particular
  * session. */
-static int
-get_psk_info(struct dtls_context_t *ctx,
+static int get_psk_info(struct dtls_context_t *ctx,
         const session_t *session,
         dtls_credentials_type_t type,
         const unsigned char *id, size_t id_len,
@@ -177,6 +196,7 @@ get_psk_info(struct dtls_context_t *ctx,
             }
 
             memcpy(result, id,idLen);
+            lwm2m_free(id);
             return idLen;
         }
         case DTLS_PSK_KEY:
@@ -192,7 +212,13 @@ get_psk_info(struct dtls_context_t *ctx,
             }
 
             memcpy(result, key,keyLen);
+            lwm2m_free(key);
             return keyLen;
+        }
+        case DTLS_PSK_HINT:
+        {
+            // PSK_HINT is optional and can be empty.
+            return 0;
         }
         default:
             printf("unsupported request type: %d\n", type);
@@ -201,32 +227,33 @@ get_psk_info(struct dtls_context_t *ctx,
     return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
 }
 
-static int
-send_to_peer(struct dtls_context_t *ctx,
+/* The callback function must return the number of bytes
+ * that were sent, or a value less than zero to indicate an
+ * error. */
+static int send_to_peer(struct dtls_context_t *ctx,
         session_t *session, uint8 *data, size_t len) {
 
     // find connection
-    dtls_connection_t * connP = (dtls_connection_t *) ctx->app;
     dtls_connection_t* cnx = connection_find((dtls_connection_t *) ctx->app, &(session->addr.st),session->size);
     if (cnx != NULL)
     {
         // send data to peer
-        int err = send_data(cnx,data,len);
-        if (COAP_NO_ERROR != err)
+
+        // TODO: nat expiration?
+        int res = send_data(cnx,data,len);
+        if (res < 0)
         {
             return -1;
         }
-        return 0;
+        return res;
     }
     return -1;
 }
 
-static int
-read_from_peer(struct dtls_context_t *ctx,
+static int read_from_peer(struct dtls_context_t *ctx,
           session_t *session, uint8 *data, size_t len) {
 
     // find connection
-    dtls_connection_t * connP = (dtls_connection_t *) ctx->app;
     dtls_connection_t* cnx = connection_find((dtls_connection_t *) ctx->app, &(session->addr.st),session->size);
     if (cnx != NULL)
     {
@@ -378,14 +405,17 @@ dtls_connection_t * connection_new_incoming(dtls_connection_t * connList,
     connP = (dtls_connection_t *)malloc(sizeof(dtls_connection_t));
     if (connP != NULL)
     {
+        memset(connP, 0, sizeof(dtls_connection_t));
         connP->sock = sock;
         memcpy(&(connP->addr), addr, addrLen);
         connP->addrLen = addrLen;
         connP->next = connList;
 
         connP->dtlsSession = (session_t *)malloc(sizeof(session_t));
+        memset(connP->dtlsSession, 0, sizeof(session_t));
         connP->dtlsSession->addr.sin6 = connP->addr;
         connP->dtlsSession->size = connP->addrLen;
+        connP->lastSend = lwm2m_gettime();
     }
 
     return connP;
@@ -448,7 +478,10 @@ dtls_connection_t * connection_create(dtls_connection_t * connList,
             {
                 *(port - 1) = 0;
             }
-            return NULL;
+            else
+            {
+                return NULL;
+            }
         }
         // split strings
         *port = 0;
@@ -505,6 +538,8 @@ dtls_connection_t * connection_create(dtls_connection_t * connList,
 
 void connection_free(dtls_connection_t * connList)
 {
+    dtls_free_context(dtlsContext);
+    dtlsContext = NULL;
     while (connList != NULL)
     {
         dtls_connection_t * nextP;
@@ -514,22 +549,29 @@ void connection_free(dtls_connection_t * connList)
 
         connList = nextP;
     }
-    dtls_free_context(dtlsContext);
-    dtlsContext = NULL;
 }
 
 int connection_send(dtls_connection_t *connP, uint8_t * buffer, size_t length){
-
     if (connP->dtlsSession == NULL) {
         // no security
         if ( 0 != send_data(connP, buffer, length)) {
             return -1 ;
         }
     } else {
+        if (DTLS_NAT_TIMEOUT > 0 && (lwm2m_gettime() - connP->lastSend) > DTLS_NAT_TIMEOUT)
+        {
+            // we need to rehandhake because our source IP/port probably changed for the server
+            if ( connection_rehandshake(connP, false) != 0 )
+            {
+                printf("can't send due to rehandshake error\n");
+                return -1;
+            }
+        }
         if (-1 == dtls_write(connP->dtlsContext, connP->dtlsSession, buffer, length)) {
             return -1;
         }
     }
+
     return 0;
 }
 
@@ -548,6 +590,32 @@ int connection_handle_packet(dtls_connection_t *connP, uint8_t * buffer, size_t 
         lwm2m_handle_packet(connP->lwm2mH, buffer, numBytes, (void*)connP);
         return 0;
     }
+}
+
+int connection_rehandshake(dtls_connection_t *connP, bool sendCloseNotify) {
+
+    // if not a dtls connection we do nothing
+    if (connP->dtlsSession == NULL) {
+        return 0;
+    }
+
+    // reset current session
+    dtls_peer_t * peer = dtls_get_peer(connP->dtlsContext, connP->dtlsSession);
+    if (peer != NULL)
+    {
+        if (!sendCloseNotify)
+        {
+            peer->state =  DTLS_STATE_CLOSED;
+        }
+        dtls_reset_peer(connP->dtlsContext, peer);
+    }
+
+    // start a fresh handshake
+    int result = dtls_connect(connP->dtlsContext, connP->dtlsSession);
+    if (result !=0) {
+         printf("error dtls reconnection %d\n",result);
+    }
+    return result;
 }
 
 uint8_t lwm2m_buffer_send(void * sessionH,

@@ -2,17 +2,18 @@
  *
  * Copyright (c) 2013, 2014, 2015 Intel Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License v2.0
  * and Eclipse Distribution License v1.0 which accompany this distribution.
  *
  * The Eclipse Public License is available at
- *    http://www.eclipse.org/legal/epl-v10.html
+ *    http://www.eclipse.org/legal/epl-v20.html
  * The Eclipse Distribution License is available at
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * Contributors:
  *    David Navarro, Intel Corporation - initial API and implementation
  *    Fabien Fleutot - Please refer to git log
+ *    Scott Bertin, AMETEK, Inc. - Please refer to git log
  *    
  *******************************************************************************/
 
@@ -173,13 +174,15 @@ static void print_indent(FILE * stream,
 }
 
 void output_buffer(FILE * stream,
-                   uint8_t * buffer,
+                   const uint8_t * buffer,
                    int length,
                    int indent)
 {
     int i;
 
     if (length == 0) fprintf(stream, "\n");
+
+    if (buffer == NULL) return;
 
     i = 0;
     while (i < length)
@@ -271,12 +274,12 @@ void output_tlv(FILE * stream,
 
             tmp = buffer[length + dataIndex + dataLen];
             buffer[length + dataIndex + dataLen] = 0;
-            if (0 < sscanf(buffer + length + dataIndex, "%"PRId64, &intValue))
+            if (0 < sscanf((const char *)buffer + length + dataIndex, "%"PRId64, &intValue))
             {
                 print_indent(stream, indent+2);
                 fprintf(stream, "data as Integer: %" PRId64 "\r\n", intValue);
             }
-            if (0 < sscanf(buffer + length + dataIndex, "%g", &floatValue))
+            if (0 < sscanf((const char*)buffer + length + dataIndex, "%lg", &floatValue))
             {
                 print_indent(stream, indent+2);
                 fprintf(stream, "data as Float: %.16g\r\n", floatValue);
@@ -299,10 +302,9 @@ void output_data(FILE * stream,
 {
     int i;
 
-    if (data == NULL) return;
-
     print_indent(stream, indent);
     fprintf(stream, "%d bytes received of type ", dataLength);
+
     switch (format)
     {
     case LWM2M_CONTENT_TEXT:
@@ -322,6 +324,16 @@ void output_data(FILE * stream,
 
     case LWM2M_CONTENT_JSON:
         fprintf(stream, "application/vnd.oma.lwm2m+json:\r\n");
+        print_indent(stream, indent);
+        for (i = 0 ; i < dataLength ; i++)
+        {
+            fprintf(stream, "%c", data[i]);
+        }
+        fprintf(stream, "\n");
+        break;
+
+    case LWM2M_CONTENT_SENML_JSON:
+        fprintf(stream, "application/senml+json:\r\n");
         print_indent(stream, indent);
         for (i = 0 ; i < dataLength ; i++)
         {
@@ -383,7 +395,12 @@ void dump_tlv(FILE * stream,
         case LWM2M_TYPE_STRING:
             fprintf(stream, "LWM2M_TYPE_STRING\r\n");
             print_indent(stream, indent + 1);
-            fprintf(stream, "\"%.*s\"\r\n", dataP[i].value.asBuffer.length, dataP[i].value.asBuffer.buffer);
+            fprintf(stream, "\"%.*s\"\r\n", (int)dataP[i].value.asBuffer.length, dataP[i].value.asBuffer.buffer);
+            break;
+        case LWM2M_TYPE_CORE_LINK:
+            fprintf(stream, "LWM2M_TYPE_CORE_LINK\r\n");
+            print_indent(stream, indent + 1);
+            fprintf(stream, "\"%.*s\"\r\n", (int)dataP[i].value.asBuffer.length, dataP[i].value.asBuffer.buffer);
             break;
         case LWM2M_TYPE_OPAQUE:
             fprintf(stream, "LWM2M_TYPE_OPAQUE\r\n");
@@ -395,10 +412,16 @@ void dump_tlv(FILE * stream,
             fprintf(stream, "%" PRId64, dataP[i].value.asInteger);
             fprintf(stream, "\r\n");
             break;
+        case LWM2M_TYPE_UNSIGNED_INTEGER:
+            fprintf(stream, "LWM2M_TYPE_UNSIGNED_INTEGER: ");
+            print_indent(stream, indent + 1);
+            fprintf(stream, "%" PRIu64, dataP[i].value.asUnsigned);
+            fprintf(stream, "\r\n");
+            break;
         case LWM2M_TYPE_FLOAT:
             fprintf(stream, "LWM2M_TYPE_FLOAT: ");
             print_indent(stream, indent + 1);
-            fprintf(stream, "%f", dataP[i].value.asInteger);
+            fprintf(stream, "%" PRId64, dataP[i].value.asInteger);
             fprintf(stream, "\r\n");
             break;
         case LWM2M_TYPE_BOOLEAN:
